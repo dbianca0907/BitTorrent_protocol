@@ -46,6 +46,7 @@ struct client{
     struct file *files; // part of files I already have
     int nr_needed_files;
     char needed_files[MAX_FILES][MAX_FILENAME];
+    struct file_tracker *files_list;
 };
 
 struct packet_for_tracker {
@@ -53,21 +54,24 @@ struct packet_for_tracker {
     int rank;
     int nr_files;
     struct file *files;
+    int nr_needed_files;
+    char needed_files[MAX_FILES][MAX_FILENAME];
 };
 
 struct client_tracker{
     int rank;
-    char segments[MAX_CHUNKS][HASH_SIZE];
+    int nr_chunks;
+    char chunks[MAX_CHUNKS][HASH_SIZE];
     enum client_type type;
-    enum status status;
 };
 
 struct file_tracker {
-    char *name;
+    char name[MAX_FILENAME];
+    int num_clients;
     struct client_tracker *clients;
 };
 
-struct tracker_database {
+struct database_tracker {
     int nr_files;
     struct file_tracker *files;
 };
