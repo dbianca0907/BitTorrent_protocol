@@ -17,7 +17,8 @@ enum status {
 enum packet_type {
     REQUEST,
     RESPONSE,
-    INIT
+    INIT,
+    WAIT
 };
 
 enum client_type {
@@ -28,13 +29,13 @@ enum client_type {
 
 struct request {
     int rank;
-    char needed_segments[MAX_CHUNKS][HASH_SIZE];
+    char needed_segments[MAX_CHUNKS][HASH_SIZE + 2];
 };
 
 struct file {
     char name[MAX_FILENAME];
     int nr_chunks;
-    char chunks[MAX_CHUNKS][HASH_SIZE];
+    char chunks[MAX_CHUNKS][HASH_SIZE + 2];
     int total_needed_chunks;
     struct request *requests;
     enum status status;
@@ -44,9 +45,18 @@ struct client{
     int rank;
     int nr_files;
     struct file *files; // part of files I already have
+    struct file *files_to_download; // part of files I need to download
     int nr_needed_files;
     char needed_files[MAX_FILES][MAX_FILENAME];
-    struct file_tracker *files_list;
+    struct file_tracker *files_list; // list received from the tracker
+};
+
+struct packet_for_peer {
+    enum packet_type type;
+    int rank_dest;
+    char message[2];
+    char chunk_hash[HASH_SIZE + 2];
+    char file_name[MAX_FILENAME];
 };
 
 struct packet_for_tracker {
@@ -61,13 +71,15 @@ struct packet_for_tracker {
 struct client_tracker{
     int rank;
     int nr_chunks;
-    char chunks[MAX_CHUNKS][HASH_SIZE];
+    char chunks[MAX_CHUNKS][HASH_SIZE + 2];
     enum client_type type;
 };
 
 struct file_tracker {
     char name[MAX_FILENAME];
     int num_clients;
+    int num_total_chunks;
+    enum status status;
     struct client_tracker *clients;
 };
 
