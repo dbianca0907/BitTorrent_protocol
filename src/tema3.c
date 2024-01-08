@@ -4,6 +4,7 @@
 
 bool mpi_state = false;
 bool init_database = true;
+bool init_list_of_clients = true;
 struct client *client;
 struct database_tracker *database;
 
@@ -22,44 +23,44 @@ void print_client() {
 }
 
 // Funcție pentru a trimite o structură file
-void sendFile(struct file *f, int dest) {
-    MPI_Send(f, sizeof(struct file), MPI_BYTE, dest, 0, MPI_COMM_WORLD);
+void sendFile(struct file *f, int dest, int tag) {
+    MPI_Send(f, sizeof(struct file), MPI_BYTE, dest, tag, MPI_COMM_WORLD);
 
     // Trimiterea matricei chunks
-    MPI_Send(f->chunks, f->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, dest, 0, MPI_COMM_WORLD);
+    MPI_Send(f->chunks, f->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, dest, tag, MPI_COMM_WORLD);
     
 }
 
 // Funcție pentru a primi o structură file
-void receiveFile(struct file *f, int source) {
-    MPI_Recv(f, sizeof(struct file), MPI_BYTE, source, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+void receiveFile(struct file *f, int source, int tag) {
+    MPI_Recv(f, sizeof(struct file), MPI_BYTE, source, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     // Primirea matricei chunks
-    MPI_Recv(f->chunks, f->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, source, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(f->chunks, f->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, source, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 }
 
-void sendClient(struct client_tracker *c, int dest) {
-    MPI_Send(c, sizeof(struct client_tracker), MPI_BYTE, dest, 0, MPI_COMM_WORLD);
+void sendClient(struct client_tracker *c, int dest, int tag) {
+    MPI_Send(c, sizeof(struct client_tracker), MPI_BYTE, dest, tag, MPI_COMM_WORLD);
 
     // Trimiterea matricei chunks
-    MPI_Send(c->chunks, c->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, dest, 0, MPI_COMM_WORLD);
+    MPI_Send(c->chunks, c->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, dest, tag, MPI_COMM_WORLD);
 }
 
-void receiveClient(struct client_tracker *c, int source) {
-    MPI_Recv(c, sizeof(struct client_tracker), MPI_BYTE, source, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+void receiveClient(struct client_tracker *c, int source, int tag) {
+    MPI_Recv(c, sizeof(struct client_tracker), MPI_BYTE, source, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     // Primirea matricei chunks
-    MPI_Recv(c->chunks, c->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, source, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(c->chunks, c->nr_chunks * (HASH_SIZE + 2), MPI_CHAR, source, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 }
 
-void send_list_of_clients(struct packet_for_tracker *packet) {
+void send_list_of_clients(struct packet_for_tracker *packet, int tag) {
     //Search in the database for the files and send the list to the client
     for (int i = 0; i < packet->nr_needed_files; i++) {
         for (int j = 0; j < database->nr_files; j++) {
             if (strcmp(packet->needed_files[i], database->files[j].name) == 0) {
-                MPI_Send(&database->files[j], sizeof(struct file_tracker), MPI_BYTE, packet->rank, 0, MPI_COMM_WORLD);
+                MPI_Send(&database->files[j], sizeof(struct file_tracker), MPI_BYTE, packet->rank, tag, MPI_COMM_WORLD);
                 for (int k = 0; k < database->files[j].num_clients; k++) {
-                    sendClient(&database->files[j].clients[k], packet->rank);
+                    sendClient(&database->files[j].clients[k], packet->rank, tag);
                 }
                 break;
             }
@@ -68,7 +69,7 @@ void send_list_of_clients(struct packet_for_tracker *packet) {
 
 }
 
-void request_list_of_files(int rank) {
+void request_list_of_files(int rank, int tag) {
     struct packet_for_tracker packet;
     packet.type = REQUEST;
     packet.rank = rank;
@@ -77,8 +78,8 @@ void request_list_of_files(int rank) {
         strcpy(packet.needed_files[i], client->needed_files[i]);
         printf("Nodul %d are nevoie de fisierul %s\n", rank, packet.needed_files[i]);
     }
-    MPI_Send(&packet, sizeof(struct packet_for_tracker), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
-    MPI_Send(client->needed_files, client->nr_needed_files * MAX_FILENAME, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+    MPI_Send(&packet, sizeof(struct packet_for_tracker), MPI_BYTE, 0, tag, MPI_COMM_WORLD);
+    MPI_Send(client->needed_files, client->nr_needed_files * MAX_FILENAME, MPI_CHAR, 0, tag, MPI_COMM_WORLD);
 }
 
 void request_chunk(int rank, int dest, char *chunk_hash, char *file_name) {
@@ -102,7 +103,7 @@ void print_database() {
     }
 }
 
-void send_packet_to_tracker() {
+void send_packet_to_tracker(enum packet_type type, int tag) {
     struct packet_for_tracker *packet = (struct packet_for_tracker*) malloc(sizeof(struct packet_for_tracker));
     packet->nr_files = client->nr_files;
     packet->files = (struct file*) malloc(client->nr_files * sizeof(struct file));
@@ -114,12 +115,12 @@ void send_packet_to_tracker() {
             strcpy(packet->files[i].chunks[j], client->files[i].chunks[j]);
         }
     }
-    packet->type = INIT;
+    packet->type = type;
     packet->rank = client->rank;
 
-    MPI_Send(packet, sizeof(struct packet_for_tracker), MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+    MPI_Send(packet, sizeof(struct packet_for_tracker), MPI_BYTE, 0, tag, MPI_COMM_WORLD);
     for (int j = 0; j < packet->nr_files; j++) {
-        sendFile(&packet->files[j], 0);
+        sendFile(&packet->files[j], 0, tag);
     }
 }
 
@@ -155,8 +156,24 @@ void init_client(int rank) {
     }
     // Se aloca memorie pentru lista de fisiere primita de la tracker
     client->files_list = (struct file_tracker*) malloc(client->nr_needed_files * sizeof(struct file_tracker));
-    send_packet_to_tracker();
+    send_packet_to_tracker(INIT, 0);
     fclose(fisier);
+}
+
+void init_list_of_files_from_tracker(int rank) {
+    //Se primeste lista de file-uri de la tracker
+    for (int i = 0; i < client->nr_needed_files; i++) {
+        MPI_Recv(&client->files_list[i], sizeof(struct file_tracker), MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("Nodul %d a primit fisierul %s de la tracker\n", rank, client->files_list[i].name);
+        printf("Numarul total de chunkuri este: %d\n", client->files_list[i].num_total_chunks);
+        // cand se primeste lista de file-uri toate sunt incomplete
+        client->files_list[i].status = INCOMPLETE;
+        printf("FIle-ul este: %d\n", client->files_list[i].status);
+        for (int j = 0; j < client->files_list->num_clients; j++) {
+            client->files_list[i].clients = (struct client_tracker *)malloc(client->files_list[i].num_clients * sizeof(struct client_tracker));
+            receiveClient(&client->files_list[i].clients[j], 0, 0);
+        }
+    }
 }
 
 void add_new_file_to_client(int rank, int i) {
@@ -177,7 +194,7 @@ void add_new_file_to_client(int rank, int i) {
             MPI_Recv(&packet, sizeof(struct packet_for_peer), MPI_BYTE, cl->rank, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             strcpy(client->files[new_file_index].chunks[k], cl->chunks[k]);
             client->files[new_file_index].nr_chunks++;
-            if (rank == 1) {
+            if (rank == 3) {
                 printf("S A AJUNS LA CHUNKUL: %d -------------> SUNT %d segmente\n", k,  client->files[new_file_index].nr_chunks);
                 printf("S a adaugat chunk-ul: %s\n", client->files[new_file_index].chunks[k]);
             }
@@ -187,13 +204,44 @@ void add_new_file_to_client(int rank, int i) {
     printf("\n");
 }
 
+void update_list_of_files_from_tracker(int rank) {
+     //Se primeste lista de file-uri de la tracker
+    for (int i = 0; i < client->nr_needed_files; i++) {
+        MPI_Recv(&client->files_list[i], sizeof(struct file_tracker), MPI_BYTE, 0, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("Nodul %d a primit fisierul %s de la tracker\n", rank, client->files_list[i].name);
+        printf("Numarul total de chunkuri este: %d\n", client->files_list[i].num_total_chunks);
+        // cand se primeste lista de file-uri toate sunt incomplete
+        client->files_list[i].status = INCOMPLETE; // TODO: de vazut cand trebuie schimbat statusul
+        printf("FIle-ul este: %d\n", client->files_list[i].status);
+        for (int j = 0; j < client->files_list->num_clients; j++) {
+            // se realoca lista de clienti
+            client->files_list[i].clients = (struct client_tracker *)realloc(client->files_list[i].clients, client->files_list[i].num_clients * sizeof(struct client_tracker));
+            receiveClient(&client->files_list[i].clients[j], 0, 3);
+        }
+    }
+}
+
 void *download_thread_func(void *arg)
 {
     int rank = *(int*) arg;
+    int chunk_counter = 10;
+    int tag;
+
+    if (init_list_of_clients) {
+        // Se cere lista de fisiere de la tracker
+        request_list_of_files(rank, 0);
+        init_list_of_files_from_tracker(rank);
+        char message[3];
+        MPI_Bcast(message, 3, MPI_CHAR, 0, MPI_COMM_WORLD);
+        init_list_of_clients = false;
+    } else {
+        // Se cere lista de fisiere de la tracker
+        request_list_of_files(rank, 3);
+        update_list_of_files_from_tracker(rank);
+    }
      //Se parcurge lista de needed_files si se cauta cate segmente mai am de downloadat
     for (int i = 0; i < client->nr_needed_files; i++) {
         if (client->files_list[i].status == COMPLETE) {
-            // 
             continue;
         }
         // Se itereaza lista de fisiere pe care o are nodul
@@ -248,7 +296,7 @@ void *download_thread_func(void *arg)
         if (client->nr_files == 0) {
             add_new_file_to_client(rank, i);
         }
-        if (rank == 1) {
+        if (rank == 3) {
             printf("Nr total de file-uri este: %d pentru nodul: %d\n", client->nr_files, rank);
         }
     }
@@ -328,6 +376,46 @@ void parseInitPacket(struct packet_for_tracker *packet) {
     init_database = false;
 }
 
+void update_swarn_file(int rank, char file_name[MAX_FILENAME], int nr_chunks, char chunks[MAX_CHUNKS][HASH_SIZE + 2]) {
+    for (int i = 0; i < database->nr_files; i++) {
+        if (strcmp(database->files[i].name, file_name) == 0) {
+            for (int j = 0; j < database->files[i].num_clients; j++) {
+                if (database->files[i].clients[j].rank == rank) {
+                    // update chunks in swarn
+                    int old_nr_chunks = database->files->clients[j].nr_chunks;
+                    for (int k = old_nr_chunks; k < nr_chunks; k++) {
+                        strcpy(database->files->clients[j].chunks[k], chunks[k]);
+                    }
+                    database->files->clients[j].nr_chunks = nr_chunks;
+                } else {
+                    // add new client in swarn and its chunks
+                    database->files[i].clients = (struct client_tracker *)realloc(database->files[i].clients, (database->files[i].num_clients + 1) * sizeof(struct client_tracker));
+                    int new_index = database->files[i].num_clients;
+                    database->files[i].clients[new_index].rank = rank;
+                    database->files[i].clients[new_index].nr_chunks = nr_chunks;
+                    for (int i = 0; i < nr_chunks; i++) {
+                        strcpy(database->files[i].clients[new_index].chunks[i], chunks[i]);
+                    }
+                    database->files[i].num_clients++;
+                }
+            }
+        }
+    }
+}
+
+// DE VERIFICAT FUNCTIA ASTA
+void update_database(struct packet_for_tracker *packet) {
+    for (int i = 0; i < packet->nr_needed_files; i++) {
+        for (int j = 0; j < packet->nr_files; j++) {
+            if (strcmp(packet->needed_files[i], packet->files[j].name) == 0) {
+                // se verifica daca clientul este in swarn-ul fisierului, daca nu se adauga
+                // daca este se actualizeaza numarul de chunkuri si chunkurile
+                update_swarn_file(packet->rank, packet->files[j].name, packet->files[j].nr_chunks, packet->files[j].chunks);
+            }
+        }
+    }
+}
+
 void tracker(int numtasks, int rank) {
     int num_clients = numtasks - 1;
     for (int i = 1; i < numtasks; i++) {
@@ -340,7 +428,7 @@ void tracker(int numtasks, int rank) {
             packet.files = (struct file *)malloc(packet.nr_files * sizeof(struct file));
             for (int j = 0; j < packet.nr_files; j++) {
                 // Procesează structura file
-                receiveFile(&packet.files[j], i);
+                receiveFile(&packet.files[j], i, 0);
             }
             parseInitPacket(&packet);
         }
@@ -362,11 +450,26 @@ void tracker(int numtasks, int rank) {
         if (packet.type == REQUEST) {
             MPI_Recv(&packet.needed_files, packet.nr_needed_files * MAX_FILENAME, MPI_CHAR, packet.rank, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             printf("Received request from rank %d for %d files\n", packet.rank, packet.nr_needed_files);
-            send_list_of_clients(&packet);
+            send_list_of_clients(&packet, 0);
         }
     }
     MPI_Bcast(message, 3, MPI_CHAR, 0, MPI_COMM_WORLD); // anunta celelalte noduri ca s-au trimis listele
-
+    printf("\n");
+    // tracker-ul primeste update uri de la clienti o data la 10 segmente descarcate
+    while (1) {
+        struct packet_for_tracker packet;
+        MPI_Recv(&packet, sizeof(struct packet_for_tracker), MPI_BYTE,  MPI_ANY_SOURCE, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        packet.files = (struct file *)malloc(packet.nr_files * sizeof(struct file));
+        if (packet.type == UPDATE) {
+            for (int j = 0; j < packet.nr_files; j++) {
+                // Procesează structura file
+                receiveFile(&packet.files[j], packet.rank, 3);
+            }
+            update_database(&packet);
+            // in functie de needed_files se trimite files_list-ul actualizat
+            send_list_of_clients(&packet, 3);
+        }
+    }
 }
 
 void peer(int numtasks, int rank) {
@@ -383,22 +486,21 @@ void peer(int numtasks, int rank) {
     MPI_Bcast(message, 3, MPI_CHAR, 0, MPI_COMM_WORLD);
     printf("Received message from tracker: %s\n", message);
 
-    // Se cere lista de fisiere de la tracker
-    request_list_of_files(rank);
-    //Se primeste lista de file-uri de la tracker
-    for (int i = 0; i < client->nr_needed_files; i++) {
-        MPI_Recv(&client->files_list[i], sizeof(struct file_tracker), MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        printf("Nodul %d a primit fisierul %s de la tracker\n", rank, client->files_list[i].name);
-        printf("Numarul total de chunkuri este: %d\n", client->files_list[i].num_total_chunks);
-        // cand se primeste lista de file-uri toate sunt incomplete
-        client->files_list[i].status = INCOMPLETE;
-        printf("FIle-ul este: %d\n", client->files_list[i].status);
-        for (int j = 0; j < client->files_list->num_clients; j++) {
-            client->files_list[i].clients = (struct client_tracker *)malloc(client->files_list[i].num_clients * sizeof(struct client_tracker));
-            receiveClient(&client->files_list[i].clients[j], 0);
-        }
-    }
-    MPI_Bcast(message, 3, MPI_CHAR, 0, MPI_COMM_WORLD);
+    // // Se cere lista de fisiere de la tracker
+    // request_list_of_files(rank);
+    // //Se primeste lista de file-uri de la tracker
+    // for (int i = 0; i < client->nr_needed_files; i++) {
+    //     MPI_Recv(&client->files_list[i], sizeof(struct file_tracker), MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    //     printf("Nodul %d a primit fisierul %s de la tracker\n", rank, client->files_list[i].name);
+    //     printf("Numarul total de chunkuri este: %d\n", client->files_list[i].num_total_chunks);
+    //     // cand se primeste lista de file-uri toate sunt incomplete
+    //     client->files_list[i].status = INCOMPLETE;
+    //     printf("FIle-ul este: %d\n", client->files_list[i].status);
+    //     for (int j = 0; j < client->files_list->num_clients; j++) {
+    //         client->files_list[i].clients = (struct client_tracker *)malloc(client->files_list[i].num_clients * sizeof(struct client_tracker));
+    //         receiveClient(&client->files_list[i].clients[j], 0, 0);
+    //     }
+    // }
     printf("\n");
     printf("A trimis mesaj de ok pentru restule proceselor\n");
     r = pthread_create(&download_thread, NULL, download_thread_func, (void *) &rank);

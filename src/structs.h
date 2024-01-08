@@ -18,7 +18,8 @@ enum packet_type {
     REQUEST,
     RESPONSE,
     INIT,
-    WAIT
+    WAIT,
+    UPDATE,
 };
 
 enum client_type {
